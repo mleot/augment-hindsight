@@ -29,7 +29,7 @@ DEFAULTS = {
     "retainEveryNTurns": 10,
     "retainOverlapTurns": 2,
     "retainToolCalls": True,
-    "retainContext": "claude-code",
+    "retainContext": "augment-code",
     "retainTags": [],
     "retainMetadata": {},
     # Connection
@@ -46,7 +46,7 @@ DEFAULTS = {
     "dynamicBankGranularity": ["agent", "project"],
     "bankMission": "",
     "retainMission": None,
-    "agentName": "claude-code",
+    "agentName": "augment-code",
     # LLM (for daemon mode)
     "llmProvider": None,
     "llmModel": None,
@@ -120,13 +120,17 @@ def load_config() -> dict:
     config = dict(DEFAULTS)
 
     # 1. Plugin default settings.json (ships with the plugin, version-specific path)
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+    plugin_root = os.environ.get("AUGMENT_PLUGIN_ROOT") or os.environ.get("CLAUDE_PLUGIN_ROOT", "")
     if not plugin_root:
         plugin_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     _load_settings_file(os.path.join(plugin_root, "settings.json"), config)
 
     # 2. User config — stable, version-independent, matches openclaw convention
-    user_config_path = os.path.join(os.path.expanduser("~"), ".hindsight", "claude-code.json")
+    # Check augment-code.json first, fall back to claude-code.json
+    hindsight_dir = os.path.join(os.path.expanduser("~"), ".hindsight")
+    user_config_path = os.path.join(hindsight_dir, "augment-code.json")
+    if not os.path.exists(user_config_path):
+        user_config_path = os.path.join(hindsight_dir, "claude-code.json")
     _load_settings_file(user_config_path, config)
 
     # Apply environment variable overrides

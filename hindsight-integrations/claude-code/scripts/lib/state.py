@@ -18,10 +18,10 @@ else:
 
 def _state_dir() -> str:
     """Get the state directory, creating it if needed."""
-    plugin_data = os.environ.get("CLAUDE_PLUGIN_DATA", "")
+    plugin_data = os.environ.get("AUGMENT_PLUGIN_DATA") or os.environ.get("CLAUDE_PLUGIN_DATA", "")
     if not plugin_data:
         # Fallback to a temp location for testing
-        plugin_data = os.path.join(os.path.expanduser("~"), ".claude", "plugins", "data", "hindsight-memory")
+        plugin_data = os.path.join(os.path.expanduser("~"), ".augment", "plugins", "data", "hindsight-memory")
     state_dir = os.path.join(plugin_data, "state")
     os.makedirs(state_dir, exist_ok=True)
     return state_dir

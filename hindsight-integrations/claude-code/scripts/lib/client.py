@@ -18,17 +18,20 @@ HEALTH_CHECK_DELAY = 2  # seconds
 
 def _plugin_version() -> str:
     """Read the plugin version from plugin.json (single source of truth)."""
-    manifest = Path(__file__).resolve().parents[2] / ".claude-plugin" / "plugin.json"
-    try:
-        return json.loads(manifest.read_text()).get("version", "0.0.0")
-    except (OSError, ValueError):
-        return "0.0.0"
+    base = Path(__file__).resolve().parents[2]
+    for plugin_dir in (".augment-plugin", ".claude-plugin"):
+        manifest = base / plugin_dir / "plugin.json"
+        try:
+            return json.loads(manifest.read_text()).get("version", "0.0.0")
+        except (OSError, ValueError):
+            continue
+    return "0.0.0"
 
 
 # Sent on every request so self-hosted deployments behind Cloudflare (or any
 # reverse proxy with UA-based bot filtering) don't block the stdlib default
 # "Python-urllib/X.Y", which trips Cloudflare error 1010.
-USER_AGENT = f"hindsight-claude-code/{_plugin_version()}"
+USER_AGENT = f"hindsight-augment-code/{_plugin_version()}"
 
 
 def _validate_api_url(url: str) -> str:

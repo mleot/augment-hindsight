@@ -8,9 +8,10 @@ Manages three connection modes (same as Openclaw):
   2. Existing local server — user already has hindsight running
   3. Auto-managed daemon — plugin starts/stops hindsight-embed
 
-In Claude Code's ephemeral model, daemon state is tracked via files in
-$CLAUDE_PLUGIN_DATA/state/. The daemon itself is a background OS process
-managed by hindsight-embed's built-in daemon command.
+In the ephemeral hook model, daemon state is tracked via files in
+$AUGMENT_PLUGIN_DATA/state/ (or $CLAUDE_PLUGIN_DATA/state/). The daemon
+itself is a background OS process managed by hindsight-embed's built-in
+daemon command.
 """
 
 import os
@@ -25,7 +26,7 @@ from .llm import detect_llm_config, get_llm_env_vars
 from .state import read_state, write_state
 
 DAEMON_STATE_FILE = "daemon.json"
-PROFILE_NAME = "claude-code"
+PROFILE_NAME = "augment-code"
 
 
 def _get_embed_command(config: dict) -> list:

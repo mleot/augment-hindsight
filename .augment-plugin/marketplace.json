@@ -1,0 +1,19 @@
+{
+  "name": "hindsight",
+  "author": {
+    "name": "vectorize-io"
+  },
+  "metadata": {
+    "description": "Official Hindsight integrations for Augment Code",
+    "version": "0.3.1"
+  },
+  "plugins": [
+    {
+      "name": "hindsight-memory",
+      "source": "./hindsight-integrations/claude-code",
+      "description": "Automatic long-term memory for Augment Code via Hindsight",
+      "version": "0.3.1",
+      "tags": ["memory", "hindsight", "recall", "retain"]
+    }
+  ]
+}
