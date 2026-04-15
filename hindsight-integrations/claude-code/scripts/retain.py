@@ -2,11 +2,13 @@
 """Auto-retain hook for Stop event.
 
 Port of: agent_end handler in Openclaw index.js
-Adapted for Claude Code hooks (ephemeral process, JSON stdin/stdout).
+Adapted for code-agent hooks (ephemeral process, JSON stdin/stdout).
+Supports Claude Code (transcript_path), Augment Code (_exchange), and
+Cortex Code.
 
 Flow:
-  1. Read hook input from stdin (session_id, transcript_path, cwd)
-  2. Read conversation transcript from transcript_path
+  1. Read hook input from stdin
+  2. Read conversation from transcript_path or _exchange
   3. Apply chunked retention logic (retainEveryNTurns + overlap window)
   4. Resolve API URL (external, existing local, or auto-start daemon)
   5. Derive bank ID and ensure mission
@@ -69,6 +71,49 @@ def read_transcript(transcript_path: str) -> list:
     return messages
 
 
+def extract_messages_from_exchange(hook_input: dict) -> list:
+    """Extract messages from Augment Code's _exchange field.
+
+    Augment Code provides conversation content inline:
+      {"_exchange": {"exchange": {"request_message": "...", "response_text": "..."}, ...}}
+    """
+    exchange_wrapper = hook_input.get("_exchange")
+    if not isinstance(exchange_wrapper, dict):
+        return []
+    exchange = exchange_wrapper.get("exchange")
+    if not isinstance(exchange, dict):
+        return []
+    messages = []
+    request = exchange.get("request_message", "")
+    if request:
+        messages.append({"role": "user", "content": request})
+    response = exchange.get("response_text", "")
+    if response:
+        messages.append({"role": "assistant", "content": response})
+    return messages
+
+
+def get_messages(hook_input: dict, config: dict) -> list:
+    """Get conversation messages from hook input, trying all known formats.
+
+    Priority: transcript_path (Claude Code) > _exchange (Augment Code) > empty.
+    """
+    transcript_path = hook_input.get("transcript_path", "")
+    if transcript_path:
+        messages = read_transcript(transcript_path)
+        if messages:
+            debug_log(config, f"Read {len(messages)} messages from transcript file")
+            return messages
+
+    messages = extract_messages_from_exchange(hook_input)
+    if messages:
+        debug_log(config, f"Read {len(messages)} messages from _exchange")
+        return messages
+
+    debug_log(config, "No messages found in transcript_path or _exchange")
+    return []
+
+
 def main():
     config = load_config()
 
@@ -84,50 +129,13 @@ def main():
         return
 
     debug_log(config, f"Stop hook input keys: {list(hook_input.keys())}")
-    # Dump all hook input values (truncated) to diagnose what agents provide
-    for k, v in hook_input.items():
-        if k == "_exchange":
-            # Dump structure of _exchange in detail
-            if isinstance(v, dict):
-                debug_log(config, f"  _exchange keys: {list(v.keys())}")
-                for ek, ev in v.items():
-                    ev_str = str(ev)
-                    debug_log(config, f"  _exchange[{ek!r}] type={type(ev).__name__}, value={ev_str[:800]}")
-            elif isinstance(v, list):
-                debug_log(config, f"  _exchange is list, len={len(v)}")
-                for i, item in enumerate(v[:3]):
-                    item_str = str(item)
-                    debug_log(config, f"  _exchange[{i}] type={type(item).__name__}, value={item_str[:800]}")
-            else:
-                debug_log(config, f"  _exchange type={type(v).__name__}, value={str(v)[:800]}")
-        else:
-            val_str = str(v)
-            debug_log(config, f"  hook_input[{k!r}] = {val_str[:500]}")
 
-    session_id = hook_input.get("session_id", "unknown")
-    transcript_path = hook_input.get("transcript_path", "")
+    session_id = hook_input.get("session_id") or hook_input.get("conversation_id") or "unknown"
 
-    # Debug: log transcript path and first few lines to diagnose format issues
-    debug_log(config, f"Transcript path: {transcript_path}")
-    if transcript_path and os.path.isfile(transcript_path):
-        try:
-            with open(transcript_path) as f:
-                preview_lines = [f.readline().strip() for _ in range(3)]
-            for i, line in enumerate(preview_lines):
-                if line:
-                    debug_log(config, f"Transcript line {i}: {line[:300]}")
-        except OSError as e:
-            debug_log(config, f"Could not preview transcript: {e}")
-    else:
-        debug_log(config, f"Transcript file missing or not a file: {transcript_path!r}")
-
-    # Read full transcript
-    all_messages = read_transcript(transcript_path)
+    # Get messages from whichever source the agent provides
+    all_messages = get_messages(hook_input, config)
     if not all_messages:
-        debug_log(config, "No messages in transcript, skipping retain")
         return
-
-    debug_log(config, f"Read {len(all_messages)} messages from transcript")
 
     # Retention mode: full session (default) or chunked (legacy)
     retain_mode = config.get("retainMode", "full-session")

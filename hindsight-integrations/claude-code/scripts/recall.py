@@ -2,18 +2,21 @@
 """Auto-recall hook for UserPromptSubmit.
 
 Port of: before_prompt_build handler in Openclaw index.js
-Adapted for Claude Code hooks (ephemeral process, JSON stdin/stdout).
+Adapted for code-agent hooks (ephemeral process, JSON stdin/stdout).
+Supports Claude Code (prompt field), Augment Code (_exchange), and
+Cortex Code.
 
 Flow:
-  1. Read hook input from stdin (prompt, session_id, transcript_path, cwd)
-  2. Resolve API URL (external, existing local, or auto-start daemon)
-  3. Derive bank ID (static or dynamic from project context)
-  4. Ensure bank mission is set (first use only)
-  5. Compose multi-turn query if recallContextTurns > 1
-  6. Truncate to recallMaxQueryChars
-  7. Call Hindsight recall API
-  8. Format memories and output hookSpecificOutput.additionalContext
-  9. Save last recall to state (for PostCompact re-injection)
+  1. Read hook input from stdin
+  2. Extract user prompt from available fields
+  3. Resolve API URL (external, existing local, or auto-start daemon)
+  4. Derive bank ID (static or dynamic from project context)
+  5. Ensure bank mission is set (first use only)
+  6. Compose multi-turn query if recallContextTurns > 1
+  7. Truncate to recallMaxQueryChars
+  8. Call Hindsight recall API
+  9. Format memories and output hookSpecificOutput.additionalContext
+  10. Save last recall to state (for PostCompact re-injection)
 
 Exit codes:
   0 — always (graceful degradation on any error)
@@ -41,38 +44,63 @@ from lib.state import write_state
 LAST_RECALL_STATE = "last_recall.json"
 
 
-def read_transcript_messages(transcript_path: str) -> list:
-    """Read messages from a JSONL transcript file for multi-turn context.
+def extract_prompt_from_exchange(hook_input: dict) -> str:
+    """Extract user prompt from Augment Code's _exchange field."""
+    exchange_wrapper = hook_input.get("_exchange")
+    if not isinstance(exchange_wrapper, dict):
+        return ""
+    exchange = exchange_wrapper.get("exchange")
+    if not isinstance(exchange, dict):
+        return ""
+    return exchange.get("request_message", "")
 
-    Claude Code transcript format nests messages:
-      {type: "user", message: {role: "user", content: "..."}, uuid: "...", ...}
-    Also supports flat format for testing:
-      {role: "user", content: "..."}
+
+def read_transcript_messages(hook_input: dict) -> list:
+    """Read messages from transcript_path or _exchange for multi-turn context.
+
+    Claude Code: reads JSONL from transcript_path.
+    Augment Code: extracts from _exchange inline field.
     """
-    if not transcript_path or not os.path.isfile(transcript_path):
-        return []
-    messages = []
-    try:
-        with open(transcript_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                    # Claude Code nested format: {type: "user", message: {role, content}}
-                    if entry.get("type") in ("user", "assistant"):
-                        msg = entry.get("message", {})
-                        if isinstance(msg, dict) and msg.get("role"):
-                            messages.append(msg)
-                    # Flat format (testing / future compatibility)
-                    elif "role" in entry and "content" in entry:
-                        messages.append(entry)
-                except json.JSONDecodeError:
-                    continue
-    except OSError:
-        pass
-    return messages
+    # Try transcript file first (Claude Code)
+    transcript_path = hook_input.get("transcript_path", "")
+    if transcript_path and os.path.isfile(transcript_path):
+        messages = []
+        try:
+            with open(transcript_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("type") in ("user", "assistant"):
+                            msg = entry.get("message", {})
+                            if isinstance(msg, dict) and msg.get("role"):
+                                messages.append(msg)
+                        elif "role" in entry and "content" in entry:
+                            messages.append(entry)
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            pass
+        if messages:
+            return messages
+
+    # Fallback: _exchange (Augment Code)
+    exchange_wrapper = hook_input.get("_exchange")
+    if isinstance(exchange_wrapper, dict):
+        exchange = exchange_wrapper.get("exchange")
+        if isinstance(exchange, dict):
+            messages = []
+            request = exchange.get("request_message", "")
+            if request:
+                messages.append({"role": "user", "content": request})
+            response = exchange.get("response_text", "")
+            if response:
+                messages.append({"role": "assistant", "content": response})
+            return messages
+
+    return []
 
 
 def main():
@@ -91,9 +119,13 @@ def main():
 
     debug_log(config, f"Hook input keys: {list(hook_input.keys())}")
 
-    # Extract user query — hooks-reference.md documents "prompt", but some
-    # Claude Code sources reference "user_prompt". Accept both defensively.
-    prompt = (hook_input.get("prompt") or hook_input.get("user_prompt") or "").strip()
+    # Extract user query — try standard fields, then _exchange (Augment Code)
+    prompt = (
+        hook_input.get("prompt")
+        or hook_input.get("user_prompt")
+        or extract_prompt_from_exchange(hook_input)
+        or ""
+    ).strip()
     if not prompt or len(prompt) < 5:
         debug_log(config, "Prompt too short for recall, skipping")
         return
@@ -127,9 +159,8 @@ def main():
     recall_roles = config.get("recallRoles", ["user", "assistant"])
 
     if recall_context_turns > 1:
-        transcript_path = hook_input.get("transcript_path", "")
-        messages = read_transcript_messages(transcript_path)
-        debug_log(config, f"Multi-turn context: {recall_context_turns} turns, {len(messages)} messages from transcript")
+        messages = read_transcript_messages(hook_input)
+        debug_log(config, f"Multi-turn context: {recall_context_turns} turns, {len(messages)} messages")
         query = compose_recall_query(prompt, messages, recall_context_turns, recall_roles)
     else:
         query = prompt
