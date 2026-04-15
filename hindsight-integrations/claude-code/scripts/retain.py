@@ -88,6 +88,20 @@ def main():
     session_id = hook_input.get("session_id", "unknown")
     transcript_path = hook_input.get("transcript_path", "")
 
+    # Debug: log transcript path and first few lines to diagnose format issues
+    debug_log(config, f"Transcript path: {transcript_path}")
+    if transcript_path and os.path.isfile(transcript_path):
+        try:
+            with open(transcript_path) as f:
+                preview_lines = [f.readline().strip() for _ in range(3)]
+            for i, line in enumerate(preview_lines):
+                if line:
+                    debug_log(config, f"Transcript line {i}: {line[:300]}")
+        except OSError as e:
+            debug_log(config, f"Could not preview transcript: {e}")
+    else:
+        debug_log(config, f"Transcript file missing or not a file: {transcript_path!r}")
+
     # Read full transcript
     all_messages = read_transcript(transcript_path)
     if not all_messages:
