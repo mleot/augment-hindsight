@@ -84,10 +84,25 @@ def main():
         return
 
     debug_log(config, f"Stop hook input keys: {list(hook_input.keys())}")
-    # Dump all hook input values (truncated) to diagnose what Cortex Code provides
+    # Dump all hook input values (truncated) to diagnose what agents provide
     for k, v in hook_input.items():
-        val_str = str(v)
-        debug_log(config, f"  hook_input[{k!r}] = {val_str[:500]}")
+        if k == "_exchange":
+            # Dump structure of _exchange in detail
+            if isinstance(v, dict):
+                debug_log(config, f"  _exchange keys: {list(v.keys())}")
+                for ek, ev in v.items():
+                    ev_str = str(ev)
+                    debug_log(config, f"  _exchange[{ek!r}] type={type(ev).__name__}, value={ev_str[:800]}")
+            elif isinstance(v, list):
+                debug_log(config, f"  _exchange is list, len={len(v)}")
+                for i, item in enumerate(v[:3]):
+                    item_str = str(item)
+                    debug_log(config, f"  _exchange[{i}] type={type(item).__name__}, value={item_str[:800]}")
+            else:
+                debug_log(config, f"  _exchange type={type(v).__name__}, value={str(v)[:800]}")
+        else:
+            val_str = str(v)
+            debug_log(config, f"  hook_input[{k!r}] = {val_str[:500]}")
 
     session_id = hook_input.get("session_id", "unknown")
     transcript_path = hook_input.get("transcript_path", "")
