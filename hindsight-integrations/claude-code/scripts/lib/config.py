@@ -29,7 +29,7 @@ DEFAULTS = {
     "retainEveryNTurns": 10,
     "retainOverlapTurns": 2,
     "retainToolCalls": True,
-    "retainContext": "augment-code",
+    "retainContext": "ai-code-agent",
     "retainTags": [],
     "retainMetadata": {},
     # Connection
@@ -109,13 +109,14 @@ def load_config() -> dict:
 
     Loading order (later entries win):
       1. Built-in defaults
-      2. Plugin default settings.json  (CLAUDE_PLUGIN_ROOT/settings.json)
-      3. User config                   (~/.hindsight/claude-code.json)
+      2. Plugin default settings.json  (AUGMENT/CLAUDE_PLUGIN_ROOT/settings.json)
+      3. User config                   (~/.hindsight/{augment,cortex,claude}-code.json)
       4. Environment variable overrides
 
-    ~/.hindsight/claude-code.json is the recommended place to configure the
+    ~/.hindsight/<agent>-code.json is the recommended place to configure the
     plugin — same convention as ~/.openclaw/openclaw.json. It is stable across
-    plugin updates and marketplace changes.
+    plugin updates and marketplace changes. The first file found in the order
+    augment-code.json → cortex-code.json → claude-code.json is used.
     """
     config = dict(DEFAULTS)
 
@@ -126,9 +127,11 @@ def load_config() -> dict:
     _load_settings_file(os.path.join(plugin_root, "settings.json"), config)
 
     # 2. User config — stable, version-independent, matches openclaw convention
-    # Check augment-code.json first, fall back to claude-code.json
+    # Check augment-code.json first, then cortex-code.json, fall back to claude-code.json
     hindsight_dir = os.path.join(os.path.expanduser("~"), ".hindsight")
     user_config_path = os.path.join(hindsight_dir, "augment-code.json")
+    if not os.path.exists(user_config_path):
+        user_config_path = os.path.join(hindsight_dir, "cortex-code.json")
     if not os.path.exists(user_config_path):
         user_config_path = os.path.join(hindsight_dir, "claude-code.json")
     _load_settings_file(user_config_path, config)

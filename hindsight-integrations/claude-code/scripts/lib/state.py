@@ -1,7 +1,8 @@
 """File-based state persistence.
 
-Claude Code hooks are ephemeral processes — state must be persisted to files.
-Uses $CLAUDE_PLUGIN_DATA/state/ as the storage directory.
+Code-agent hooks are ephemeral processes — state must be persisted to files.
+Uses $AUGMENT_PLUGIN_DATA / $CLAUDE_PLUGIN_DATA / auto-detected directory.
+Supports Augment Code, Claude Code, and Cortex Code.
 """
 
 import json
@@ -18,10 +19,25 @@ else:
 
 def _state_dir() -> str:
     """Get the state directory, creating it if needed."""
-    plugin_data = os.environ.get("AUGMENT_PLUGIN_DATA") or os.environ.get("CLAUDE_PLUGIN_DATA", "")
+    plugin_data = (
+        os.environ.get("AUGMENT_PLUGIN_DATA")
+        or os.environ.get("CLAUDE_PLUGIN_DATA")
+        or ""
+    )
     if not plugin_data:
-        # Fallback to a temp location for testing
-        plugin_data = os.path.join(os.path.expanduser("~"), ".augment", "plugins", "data", "hindsight-memory")
+        # Detect which agent we're running under by checking config dirs.
+        # Cortex Code: ~/.snowflake/cortex/  Augment: ~/.augment/
+        cortex_data = os.path.join(
+            os.path.expanduser("~"), ".snowflake", "cortex", "plugins", "data", "hindsight-memory"
+        )
+        augment_data = os.path.join(
+            os.path.expanduser("~"), ".augment", "plugins", "data", "hindsight-memory"
+        )
+        # Prefer Cortex Code path if its hooks config exists, otherwise Augment/Claude fallback
+        if os.path.exists(os.path.join(os.path.expanduser("~"), ".snowflake", "cortex", "hooks.json")):
+            plugin_data = cortex_data
+        else:
+            plugin_data = augment_data
     state_dir = os.path.join(plugin_data, "state")
     os.makedirs(state_dir, exist_ok=True)
     return state_dir
