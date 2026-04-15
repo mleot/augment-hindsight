@@ -34,6 +34,10 @@ def main():
         hook_input = {}
 
     debug_log(config, f"SessionStart hook, source: {hook_input.get('source', 'unknown')}")
+    # Dump all hook input fields to diagnose agent-specific differences
+    for k, v in hook_input.items():
+        val_str = str(v)
+        debug_log(config, f"  hook_input[{k!r}] = {val_str[:500]}")
 
     # Try to resolve API URL (health check). Don't start daemon here —
     # that's too slow for session start. Just check if server is reachable.

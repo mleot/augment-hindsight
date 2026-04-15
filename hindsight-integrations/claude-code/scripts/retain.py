@@ -84,6 +84,10 @@ def main():
         return
 
     debug_log(config, f"Stop hook input keys: {list(hook_input.keys())}")
+    # Dump all hook input values (truncated) to diagnose what Cortex Code provides
+    for k, v in hook_input.items():
+        val_str = str(v)
+        debug_log(config, f"  hook_input[{k!r}] = {val_str[:500]}")
 
     session_id = hook_input.get("session_id", "unknown")
     transcript_path = hook_input.get("transcript_path", "")
