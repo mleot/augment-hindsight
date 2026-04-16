@@ -137,9 +137,19 @@ def main():
     if not all_messages:
         return
 
+    # Detect whether we're using _exchange (single-turn inline data) vs
+    # transcript_path (full session history).  With _exchange each hook
+    # invocation only sees the current turn, so skipping turns means
+    # permanently losing data.  Force retainEveryNTurns=1 in that case.
+    has_transcript = bool(hook_input.get("transcript_path"))
+    using_exchange = not has_transcript and "_exchange" in hook_input
+
     # Retention mode: full session (default) or chunked (legacy)
     retain_mode = config.get("retainMode", "full-session")
     retain_every_n = max(1, config.get("retainEveryNTurns", 1))
+    if using_exchange and retain_every_n > 1:
+        debug_log(config, f"_exchange mode: overriding retainEveryNTurns {retain_every_n} -> 1 (no transcript history)")
+        retain_every_n = 1
     retain_full_window = False
     messages_to_retain = all_messages
 

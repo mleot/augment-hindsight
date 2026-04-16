@@ -26,7 +26,7 @@ DEFAULTS = {
     "autoRetain": True,
     "retainMode": "full-session",
     "retainRoles": ["user", "assistant"],
-    "retainEveryNTurns": 10,
+    "retainEveryNTurns": 1,
     "retainOverlapTurns": 2,
     "retainToolCalls": True,
     "retainContext": "ai-code-agent",
