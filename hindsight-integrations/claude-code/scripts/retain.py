@@ -31,6 +31,8 @@ from lib.client import HindsightClient
 from lib.config import debug_log, load_config
 from lib.content import (
     prepare_retention_transcript,
+    read_augment_transcript,
+    read_cortex_transcript,
     slice_last_turns_by_user_boundary,
 )
 from lib.daemon import get_api_url
@@ -93,25 +95,46 @@ def extract_messages_from_exchange(hook_input: dict) -> list:
     return messages
 
 
-def get_messages(hook_input: dict, config: dict) -> list:
+def get_messages(hook_input: dict, config: dict) -> tuple:
     """Get conversation messages from hook input, trying all known formats.
 
-    Priority: transcript_path (Claude Code) > _exchange (Augment Code) > empty.
+    Priority:
+      1. transcript_path — Claude Code (full session, has_full_history=True)
+      2. Cortex history file — Cortex Code (full session, has_full_history=True)
+      3. Augment session file — Augment Code (full session, has_full_history=True)
+      4. _exchange — single turn fallback (has_full_history=False)
+
+    Returns:
+      (messages, has_full_history): has_full_history=True means the full
+      session transcript is available and retainEveryNTurns can be respected.
     """
     transcript_path = hook_input.get("transcript_path", "")
     if transcript_path:
         messages = read_transcript(transcript_path)
         if messages:
             debug_log(config, f"Read {len(messages)} messages from transcript file")
-            return messages
+            return messages, True
 
+    # Cortex Code: full history available via conversation file
+    messages = read_cortex_transcript(hook_input)
+    if messages:
+        debug_log(config, f"Read {len(messages)} messages from Cortex history file")
+        return messages, True
+
+    # Augment Code (VSCode plugin + auggie CLI): full history via session file
+    messages = read_augment_transcript(hook_input)
+    if messages:
+        debug_log(config, f"Read {len(messages)} messages from Augment session file")
+        return messages, True
+
+    # Fallback: only the current turn is available inline
     messages = extract_messages_from_exchange(hook_input)
     if messages:
-        debug_log(config, f"Read {len(messages)} messages from _exchange")
-        return messages
+        debug_log(config, f"Read {len(messages)} messages from _exchange (single turn)")
+        return messages, False
 
-    debug_log(config, "No messages found in transcript_path or _exchange")
-    return []
+    debug_log(config, "No messages found in transcript_path, Cortex history, Augment session, or _exchange")
+    return [], False
 
 
 def main():
@@ -133,16 +156,14 @@ def main():
     session_id = hook_input.get("session_id") or hook_input.get("conversation_id") or "unknown"
 
     # Get messages from whichever source the agent provides
-    all_messages = get_messages(hook_input, config)
+    all_messages, has_full_history = get_messages(hook_input, config)
     if not all_messages:
         return
 
-    # Detect whether we're using _exchange (single-turn inline data) vs
-    # transcript_path (full session history).  With _exchange each hook
-    # invocation only sees the current turn, so skipping turns means
-    # permanently losing data.  Force retainEveryNTurns=1 in that case.
-    has_transcript = bool(hook_input.get("transcript_path"))
-    using_exchange = not has_transcript and "_exchange" in hook_input
+    # Detect whether we have a full session transcript.  Without full history
+    # (e.g. Augment Code _exchange mode), each hook invocation only sees one
+    # turn — skipping turns would permanently lose data, so force retain=1.
+    using_exchange = not has_full_history
 
     # Retention mode: full session (default) or chunked (legacy)
     retain_mode = config.get("retainMode", "full-session")

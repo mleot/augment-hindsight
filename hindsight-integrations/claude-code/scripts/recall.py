@@ -36,6 +36,8 @@ from lib.content import (
     compose_recall_query,
     format_current_time,
     format_memories,
+    read_augment_transcript,
+    read_cortex_transcript,
     truncate_recall_query,
 )
 from lib.daemon import get_api_url
@@ -56,10 +58,13 @@ def extract_prompt_from_exchange(hook_input: dict) -> str:
 
 
 def read_transcript_messages(hook_input: dict) -> list:
-    """Read messages from transcript_path or _exchange for multi-turn context.
+    """Read messages from transcript for multi-turn recall context.
 
-    Claude Code: reads JSONL from transcript_path.
-    Augment Code: extracts from _exchange inline field.
+    Priority:
+      1. transcript_path — Claude Code (full session JSONL)
+      2. Cortex history file — Cortex Code (full session JSONL)
+      3. Augment session file — Augment Code (full session JSON)
+      4. _exchange — single turn fallback
     """
     # Try transcript file first (Claude Code)
     transcript_path = hook_input.get("transcript_path", "")
@@ -86,7 +91,17 @@ def read_transcript_messages(hook_input: dict) -> list:
         if messages:
             return messages
 
-    # Fallback: _exchange (Augment Code)
+    # Cortex Code: full history available via conversation file
+    messages = read_cortex_transcript(hook_input)
+    if messages:
+        return messages
+
+    # Augment Code (VSCode plugin + auggie CLI): full history via session file
+    messages = read_augment_transcript(hook_input)
+    if messages:
+        return messages
+
+    # Fallback: _exchange (single turn only)
     exchange_wrapper = hook_input.get("_exchange")
     if isinstance(exchange_wrapper, dict):
         exchange = exchange_wrapper.get("exchange")

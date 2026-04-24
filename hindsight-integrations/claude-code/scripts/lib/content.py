@@ -8,8 +8,111 @@ truncateRecallQuery, sliceLastTurnsByUserBoundary, prepareRetentionTranscript,
 formatMemories.
 """
 
+import json
+import os
 import re
 from datetime import datetime, timezone
+
+
+def read_cortex_transcript(hook_input: dict) -> list:
+    """Read full conversation history from Cortex Code's history file.
+
+    Cortex Code stores the full session in:
+      ~/.snowflake/cortex/conversations/{conversation_id}.history.jsonl
+
+    Format: flat JSONL, each line is {role, id, content, ...}.
+    The content field is an array of blocks, which _extract_text_content
+    already handles.
+
+    Returns an empty list if the file cannot be found or read.
+    """
+    conversation_id = (
+        hook_input.get("conversation_id")
+        or hook_input.get("session_id")
+    )
+    if not conversation_id or conversation_id == "unknown":
+        return []
+
+    history_file = os.path.join(
+        os.path.expanduser("~"),
+        ".snowflake", "cortex", "conversations",
+        f"{conversation_id}.history.jsonl",
+    )
+    if not os.path.isfile(history_file):
+        return []
+
+    messages = []
+    try:
+        with open(history_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    # Claude Code nested: {type: "user", message: {role, content}}
+                    if entry.get("type") in ("user", "assistant"):
+                        msg = entry.get("message", {})
+                        if isinstance(msg, dict) and msg.get("role"):
+                            messages.append(msg)
+                    # Flat format: Cortex Code {role, id, content, ...}
+                    elif "role" in entry and "content" in entry:
+                        messages.append(entry)
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        pass
+
+    return messages
+
+
+def read_augment_transcript(hook_input: dict) -> list:
+    """Read full conversation history from Augment Code's session file.
+
+    Augment (both the VSCode plugin and auggie CLI) stores the full session in:
+      ~/.augment/sessions/{conversation_id}.json
+
+    Format: JSON with chatHistory array of exchange objects:
+      {exchange: {request_message, response_text, ...}, ...}
+
+    Returns messages as [{role, content}, ...] pairs, oldest first.
+    Returns an empty list if the file cannot be found or read.
+    """
+    conversation_id = (
+        hook_input.get("conversation_id")
+        or hook_input.get("session_id")
+    )
+    if not conversation_id or conversation_id == "unknown":
+        return []
+
+    session_file = os.path.join(
+        os.path.expanduser("~"),
+        ".augment", "sessions",
+        f"{conversation_id}.json",
+    )
+    if not os.path.isfile(session_file):
+        return []
+
+    try:
+        with open(session_file) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    messages = []
+    for item in data.get("chatHistory", []):
+        exchange = item.get("exchange", {})
+        if not isinstance(exchange, dict):
+            continue
+        request = exchange.get("request_message", "")
+        response = exchange.get("response_text", "")
+        if request:
+            messages.append({"role": "user", "content": request})
+        if response:
+            messages.append({"role": "assistant", "content": response})
+
+    return messages
+
 
 # ---------------------------------------------------------------------------
 # Memory tag stripping (anti-feedback-loop)
