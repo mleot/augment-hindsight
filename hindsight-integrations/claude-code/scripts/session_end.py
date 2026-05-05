@@ -116,7 +116,7 @@ def force_final_retain(hook_input: dict, config: dict):
     retain_roles = config.get("retainRoles", ["user", "assistant"])
     include_tool_calls = config.get("retainToolCalls", True)
     transcript, message_count = prepare_retention_transcript(
-        all_messages, retain_roles, full_window=True, include_tool_calls=include_tool_calls
+        all_messages, retain_roles, retain_full_window=True, include_tool_calls=include_tool_calls
     )
 
     if not transcript:
