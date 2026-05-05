@@ -207,7 +207,7 @@ def main():
         debug_log(config, "No memories found")
         return
 
-    debug_log(config, f"Injecting {len(results)} memories")
+    debug_log(config, f"Injecting {len(results)} memories into context")
 
     # Format context message — exact match of Openclaw's format
     memories_formatted = format_memories(results)
@@ -221,6 +221,13 @@ def main():
         f"{memories_formatted}\n"
         f"</hindsight_memories>"
     )
+
+    # Debug: log the recalled context being injected
+    debug_log(config, "=" * 60)
+    debug_log(config, "RECALLED CONTEXT BEING INJECTED:")
+    debug_log(config, "=" * 60)
+    debug_log(config, context_message)
+    debug_log(config, "=" * 60)
 
     # Save last recall to state for diagnostics
     write_state(
