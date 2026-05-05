@@ -134,13 +134,26 @@ def main():
 
     debug_log(config, f"Hook input keys: {list(hook_input.keys())}")
 
-    # Extract user query — try standard fields, then _exchange (Augment Code)
+    # Extract user query — try standard fields, then _exchange (Augment Code), then fallback to transcript
     prompt = (
         hook_input.get("prompt")
         or hook_input.get("user_prompt")
         or extract_prompt_from_exchange(hook_input)
         or ""
     ).strip()
+
+    # Fallback: if no prompt field, read from transcript (useful for some hook types)
+    if not prompt:
+        messages = read_transcript_messages(hook_input)
+        if messages:
+            # Get the last user message
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    if isinstance(content, str):
+                        prompt = content.strip()
+                        break
+
     if not prompt or len(prompt) < 5:
         debug_log(config, "Prompt too short for recall, skipping")
         return

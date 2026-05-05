@@ -148,6 +148,21 @@ def load_config() -> dict:
 
 
 def debug_log(config: dict, *args):
-    """Log to stderr if debug mode is enabled."""
+    """Log to stderr and optionally to file if debug mode is enabled."""
     if config.get("debug"):
-        print("[Hindsight]", *args, file=sys.stderr)
+        msg = "[Hindsight] " + " ".join(str(a) for a in args)
+        # Always log to stderr (shown in UI)
+        print(msg, file=sys.stderr)
+        # Also log to file if logFile is configured
+        log_file = config.get("logFile")
+        if log_file:
+            try:
+                from pathlib import Path
+                log_path = Path(log_file).expanduser()
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "a") as f:
+                    import time
+                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"{timestamp} {msg}\n")
+            except Exception:
+                pass  # Silently fail on logging errors

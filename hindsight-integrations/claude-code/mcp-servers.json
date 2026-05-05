@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "hindsight": {
+      "url": "http://localhost:8888/mcp/augment_agent/"
+    }
+  }
+}
