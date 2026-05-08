@@ -1,6 +1,6 @@
 ---
 name: hindsight:auto-recall
-description: Always use Hindsight recall before processing user requests to gather relevant context from past conversations, decisions, and preferences. This skill is automatically applied by the UserPromptSubmit hook.
+description: Always use Hindsight recall_hindsight tool FIRST before processing any user request to gather relevant context from past conversations, decisions, and preferences. Call this tool proactively on every user message.
 ---
 
 # Hindsight Auto-Recall
@@ -9,39 +9,98 @@ This skill ensures you **always** use Hindsight's recall functionality to gather
 
 ## Core Principle
 
-**ALWAYS recall memories BEFORE thinking or responding to any user request.**
+**ALWAYS call `recall_hindsight` FIRST, before thinking or responding to any user request.**
 
-The recall happens automatically via the `UserPromptSubmit` hook, which injects relevant memories into the conversation context. You should treat these memories as high-priority context.
+This is not optional. This is not only for certain types of requests. This is **EVERY SINGLE TIME**.
 
-## How Auto-Recall Works
+## Workflow for Every User Request
 
-1. **User submits a prompt** → Triggers `UserPromptSubmit` hook
-2. **Hook calls `recall.py`** → Queries Hindsight for relevant memories
-3. **Memories are injected** → Added to your context in `<hindsight_memories>` tags
-4. **You respond** → Using both current request and recalled memories
+```
+1. User sends message
+2. YOU call recall_hindsight(query=<user's request>, max_tokens=1024, budget="mid")
+3. Read the recalled memories
+4. THEN formulate your response using both current request + recalled context
+5. Respond to user
+```
 
-## Using Recalled Memories
+## When to Call Recall
 
-Recalled memories appear in your context like this:
+**ALWAYS** - Call `recall_hindsight` on:
+- ✅ Every user question
+- ✅ Every code request
+- ✅ Every debugging task
+- ✅ Every explanation request
+- ✅ Every "how do I..." question
+- ✅ Every follow-up message
+- ✅ Every new topic
+- ✅ Literally every single user message
 
-```xml
-<hindsight_memories>
-Relevant memories from past conversations (prioritize recent when conflicting). 
-Only use memories that are directly useful to continue this conversation; ignore the rest:
+**NEVER skip recall** - Even if the request seems simple or unrelated to past work.
 
-- User prefers functional programming patterns over OOP [experience] (2024-03-15)
-- Project uses TypeScript with strict mode enabled [world] (2024-03-14)
-- User is working on a React application with Next.js [experience] (2024-03-10)
-</hindsight_memories>
+## How to Call Recall
+
+Use the `recall_hindsight` MCP tool:
+
+```python
+recall_hindsight(
+    query="<user's request or question>",
+    max_tokens=1024,
+    budget="mid",
+    types=["world", "experience"]
+)
+```
+
+### Example Calls
+
+**User asks:** "How do I add a new endpoint to the API?"
+
+**You call first:**
+```
+recall_hindsight(
+    query="How do I add a new endpoint to the API?",
+    max_tokens=1024,
+    budget="mid"
+)
+```
+
+**Then use the results** to see if:
+- User has API endpoint patterns already established
+- User prefers certain frameworks or approaches
+- There are existing examples in their codebase
+- User has preferences about routing, validation, etc.
+
+## Recalled Memory Format
+
+Memories are returned as a list of results:
+
+```json
+{
+  "results": [
+    {
+      "text": "User prefers functional programming patterns over OOP",
+      "type": "experience",
+      "mentioned_at": "2024-03-15T10:30:00Z",
+      "score": 0.92
+    },
+    {
+      "text": "Project uses FastAPI with Pydantic v2 for validation",
+      "type": "world",
+      "mentioned_at": "2024-03-14T15:20:00Z",
+      "score": 0.88
+    }
+  ]
+}
 ```
 
 ### Guidelines for Using Memories
 
-1. **Prioritize recalled memories** when they're relevant to the current request
-2. **Resolve conflicts** by preferring recent memories over old ones
-3. **Ignore irrelevant memories** - not every memory applies to every request
-4. **Don't mention the memory system** unless directly asked
-5. **Use memories naturally** - incorporate them into your response without saying "I recall that..."
+1. **CALL RECALL FIRST** - Before any thinking, before any response
+2. **Prioritize recalled memories** when they're relevant to the current request
+3. **Resolve conflicts** by preferring recent memories over old ones (higher `mentioned_at` timestamps)
+4. **Ignore irrelevant memories** - not every memory applies to every request
+5. **Don't mention the memory system** unless directly asked
+6. **Use memories naturally** - incorporate them into your response without saying "I recall that..."
+7. **Check the score** - Higher scores (>0.8) are more relevant
 
 ## Memory Types
 
@@ -59,83 +118,88 @@ Only use memories that are directly useful to continue this conversation; ignore
 - **Understanding context** - Project structure, tech stack, team conventions
 - **Personalization** - Adapt to user's working style and communication preferences
 
-## Recall Configuration
+## Recall Parameters
 
-The recall behavior is controlled by `settings.json`:
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `query` | *required* | The user's request or relevant question |
+| `max_tokens` | `1024` | Max tokens for recalled memories (increase for more context) |
+| `budget` | `"mid"` | Search effort: `"low"` (fast), `"mid"` (balanced), `"high"` (thorough) |
+| `types` | `["world", "experience"]` | Memory types: `"world"`, `"experience"`, `"opinion"` |
 
-```json
-{
-  "autoRecall": true,
-  "recallBudget": "mid",
-  "recallMaxTokens": 1024,
-  "recallTypes": ["world", "experience"],
-  "recallContextTurns": 1,
-  "recallMaxQueryChars": 800
-}
-```
+## Advanced: Reflect for Deeper Analysis
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `autoRecall` | `true` | Enable/disable automatic recall |
-| `recallBudget` | `"mid"` | Search effort: `"low"`, `"mid"`, `"high"` |
-| `recallMaxTokens` | `1024` | Max tokens for recalled memories |
-| `recallTypes` | `["world", "experience"]` | Memory types to include |
-| `recallContextTurns` | `1` | Number of recent conversation turns to include in query |
+For complex questions that need synthesized insights, use `reflect_hindsight`:
 
-## Manual Recall (MCP Tools)
-
-In addition to auto-recall, you can also manually query memories using MCP tools:
-
-### `recall_hindsight`
-Query memories for specific information:
-```
-recall_hindsight(
-  query="What are the user's Python testing preferences?",
-  max_tokens=2048,
-  budget="high"
-)
-```
-
-### `reflect_hindsight`
-Get synthesized analysis from memories:
-```
+```python
 reflect_hindsight(
-  query="What architectural patterns does the user prefer based on past projects?",
-  max_tokens=4096
+    query="What architectural patterns does the user prefer based on past projects?",
+    max_tokens=4096,
+    budget="low"
 )
 ```
+
+**When to use reflect vs recall:**
+- **Recall**: Retrieve specific facts → "What did the user say about X?"
+- **Reflect**: Synthesize patterns → "Based on past work, what approach should I take?"
+
+Use `recall_hindsight` by default. Use `reflect_hindsight` when you need reasoning across multiple memories.
 
 ## Best Practices
 
-1. **Trust the auto-recall** - The hook already ran; memories are in context
-2. **Don't ignore memories** - They're injected for a reason
-3. **Use manual recall sparingly** - Only when you need deeper context than auto-recall provides
-4. **Keep retain working** - The more you retain, the better recall becomes
-5. **Monitor recall quality** - If memories seem off-topic, the query construction may need tuning
+1. **ALWAYS call recall first** - This is the most important rule
+2. **Pass the user's exact query** - Don't paraphrase; use their actual words
+3. **Don't skip on "simple" requests** - Context matters even for basic questions
+4. **Read ALL results** - Don't just look at the first one
+5. **Use memories to inform** - Not just repeat, but apply intelligently
+6. **Keep retain working** - The more you retain, the better recall becomes
 
 ## Troubleshooting
 
-**No memories appearing?**
-- Check `autoRecall: true` in settings.json
-- Verify Hindsight API is reachable (`hindsightApiUrl`)
-- Look for `[Hindsight]` debug logs if `debug: true`
+**No memories returned?**
+- This is normal for new users or new projects
+- Verify Hindsight MCP server is connected (check available tools)
+- Continue with your response using current context only
 
 **Too many irrelevant memories?**
-- Reduce `recallMaxTokens` to get fewer, more relevant results
-- Lower `recallBudget` to `"low"` for faster but less thorough search
-- Adjust `recallTypes` to exclude opinion if you only want facts
+- Reduce `max_tokens` to get fewer, more relevant results (try `512`)
+- Lower `budget` to `"low"` for faster but more focused search
+- Check if memories are actually irrelevant or just unexpected context
 
-**Memories from wrong project?**
-- Check that `bankId` is unique per project if using `dynamicBankId: true`
-- Review tags to ensure proper filtering (e.g., by session, computer, user)
+**Tool call fails?**
+- Verify Hindsight MCP server is running
+- Check that `recall_hindsight` is in your available tools
+- Fall back to responding without recalled context
+
+## Critical Reminders
+
+### ⚠️ YOU MUST CALL RECALL FIRST
+
+This is not a suggestion. This is not optional. This is **mandatory**.
+
+**Every user message = Call `recall_hindsight` first**
+
+### ✅ Correct Flow
+```
+User: "How do I add logging?"
+You: [call recall_hindsight]
+You: [read results]
+You: [respond using current request + recalled context]
+```
+
+### ❌ Incorrect Flow
+```
+User: "How do I add logging?"
+You: [respond immediately without calling recall]  ← WRONG
+```
 
 ## Summary
 
-**You don't need to do anything special** - auto-recall happens automatically on every user request. Just:
+1. **Call `recall_hindsight` on EVERY user message** - No exceptions
+2. **Use the user's query as the search query**
+3. **Read the results before responding**
+4. **Apply relevant memories to your response**
+5. **Ignore irrelevant memories**
+6. **Never mention you're using memory** unless asked
 
-1. ✅ Read the `<hindsight_memories>` in your context
-2. ✅ Use relevant memories when responding
-3. ✅ Ignore memories that don't apply
-4. ✅ Continue working naturally
-
-The system handles recall timing and query construction automatically.
+**The entire purpose of this skill is to make you call recall first, every time.**
