@@ -19,8 +19,10 @@ Exit codes:
   0 — always (graceful degradation on any error)
 """
 
+import getpass
 import json
 import os
+import socket
 import sys
 import time
 
@@ -237,11 +239,13 @@ def main():
         document_id = session_id
 
     # Resolve template variables in tags and metadata.
-    # Supported variables: {session_id}, {bank_id}, {timestamp}
+    # Supported variables: {session_id}, {bank_id}, {timestamp}, {computer_name}, {user_name}
     template_vars = {
         "session_id": session_id,
         "bank_id": bank_id,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "computer_name": socket.gethostname(),
+        "user_name": getpass.getuser(),
     }
 
     def _resolve_template(value: str) -> str:
