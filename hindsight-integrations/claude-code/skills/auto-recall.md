@@ -145,6 +145,125 @@ reflect_hindsight(
 
 Use `recall_hindsight` by default. Use `reflect_hindsight` when you need reasoning across multiple memories.
 
+## Manual Retain: Close the Knowledge Loop
+
+When you recall and find **no answer** or **incomplete information**, but then **learn the answer** during the conversation, you should **manually retain** that new knowledge.
+
+### The Pattern: Learn-Then-Retain
+
+```
+1. User asks a question
+2. You call recall_hindsight (no relevant memories found)
+3. You and user figure out the answer together
+4. You NOW KNOW the answer → Call retain_hindsight to store it
+```
+
+### When to Manually Retain
+
+**ALWAYS retain when:**
+- ✅ Recall returned no results, and you learned the answer
+- ✅ Recall returned outdated info, and you discovered the current answer
+- ✅ User taught you a preference or pattern
+- ✅ You discovered an important project fact (tech stack, architecture, etc.)
+- ✅ User corrected you or provided clarification
+- ✅ You solved a problem that wasn't in memory
+
+**DON'T retain:**
+- ❌ General knowledge or common facts
+- ❌ Temporary information (today's weather, current time)
+- ❌ Information that's already in recalled memories
+- ❌ Routine confirmations or small talk
+
+### How to Manually Retain
+
+Use the `retain_hindsight` or `sync_retain_hindsight` MCP tool:
+
+```python
+# Synchronous (waits for completion)
+sync_retain_hindsight(
+    content="<what you learned>",
+    context="learned-from-conversation",
+    metadata={"learned_from": "user_explanation"}
+)
+
+# Or asynchronous (returns immediately)
+retain_hindsight(
+    content="<what you learned>",
+    context="learned-from-conversation"
+)
+```
+
+### Example: Learn-Then-Retain Flow
+
+**User asks:** "What's our preferred logging library?"
+
+**You call recall:**
+```python
+recall_hindsight(
+    query="What's our preferred logging library?",
+    max_tokens=1024
+)
+# Returns: [] (no results)
+```
+
+**Conversation continues:**
+```
+You: "I don't have that information stored. What logging library do you prefer?"
+User: "We use structlog for all our Python services"
+You: "Got it, I'll remember that."
+```
+
+**NOW YOU RETAIN:**
+```python
+sync_retain_hindsight(
+    content="User's team uses structlog as the preferred logging library for Python services",
+    context="user-preference",
+    metadata={"topic": "logging", "language": "python"}
+)
+```
+
+**Next time:** When someone asks about logging, recall will return this memory!
+
+### What to Include in Manual Retains
+
+Write retains as **clear, factual statements**:
+
+✅ **Good retains:**
+- "User prefers pytest over unittest for Python testing"
+- "Project uses FastAPI with Pydantic v2 for API validation"
+- "Team convention: use absolute imports, not relative imports"
+- "Database connection pool is configured in config/db.py"
+
+❌ **Bad retains:**
+- "We talked about testing" (too vague)
+- "The user said something about imports" (not specific)
+- "I helped with the database" (not factual)
+
+### Retain Parameters
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `content` | What you learned (required) | "User prefers functional over OOP" |
+| `context` | Why/how you learned it | `"user-preference"`, `"discovered"`, `"correction"` |
+| `metadata` | Additional structured data | `{"topic": "testing", "language": "python"}` |
+| `tags` | Optional tags for filtering | `["project:myapp", "preference"]` |
+| `timestamp` | When learned (ISO format) | `"2024-05-08T10:30:00Z"` (optional, auto-set) |
+
+### Use Sync vs Async Retain
+
+- **`sync_retain_hindsight`**: Waits for completion, confirms storage
+- **`retain_hindsight`**: Returns immediately, processes in background
+
+Use `sync_retain_hindsight` when:
+- The information is critical
+- You want to confirm it was stored
+- You're about to use it in the next response
+
+Use `retain_hindsight` when:
+- It's supplementary information
+- Speed matters more than confirmation
+- You're retaining multiple things at once
+
 ## Best Practices
 
 1. **ALWAYS call recall first** - This is the most important rule
@@ -152,7 +271,9 @@ Use `recall_hindsight` by default. Use `reflect_hindsight` when you need reasoni
 3. **Don't skip on "simple" requests** - Context matters even for basic questions
 4. **Read ALL results** - Don't just look at the first one
 5. **Use memories to inform** - Not just repeat, but apply intelligently
-6. **Keep retain working** - The more you retain, the better recall becomes
+6. **Close the knowledge loop** - When recall fails but you learn the answer, retain it
+7. **Retain new discoveries** - User preferences, corrections, project facts
+8. **Write clear retains** - Make them specific, factual, and useful for future recall
 
 ## Troubleshooting
 
@@ -179,7 +300,7 @@ This is not a suggestion. This is not optional. This is **mandatory**.
 
 **Every user message = Call `recall_hindsight` first**
 
-### ✅ Correct Flow
+### ✅ Correct Flow with Recall
 ```
 User: "How do I add logging?"
 You: [call recall_hindsight]
@@ -187,19 +308,51 @@ You: [read results]
 You: [respond using current request + recalled context]
 ```
 
+### ✅ Correct Flow with Learn-Then-Retain
+```
+User: "What's our API authentication pattern?"
+You: [call recall_hindsight → no results]
+You: "I don't have that information. What pattern do you use?"
+User: "We use JWT tokens with refresh rotation"
+You: [call sync_retain_hindsight to store this]
+You: "Got it, I'll remember that for next time."
+```
+
 ### ❌ Incorrect Flow
 ```
 User: "How do I add logging?"
 You: [respond immediately without calling recall]  ← WRONG
+
+User: "We use JWT authentication"
+You: "Thanks!" [but don't retain it]  ← WRONG, you should retain this
 ```
 
 ## Summary
+
+### Core Workflow
 
 1. **Call `recall_hindsight` on EVERY user message** - No exceptions
 2. **Use the user's query as the search query**
 3. **Read the results before responding**
 4. **Apply relevant memories to your response**
 5. **Ignore irrelevant memories**
-6. **Never mention you're using memory** unless asked
 
-**The entire purpose of this skill is to make you call recall first, every time.**
+### Close the Knowledge Loop
+
+6. **When recall returns no answer** - Note that you don't have this information
+7. **When you learn the answer** - Through user explanation, code exploration, or problem-solving
+8. **Call `sync_retain_hindsight`** - Store the new knowledge for future recall
+9. **Write clear, specific content** - Make it useful for next time
+
+### What This Achieves
+
+- **First conversation**: You ask questions, user teaches you → You retain
+- **Later conversations**: You recall those learnings → You already know
+- **Continuous improvement**: Every gap filled becomes future knowledge
+- **Personalization**: You remember user's preferences, patterns, and context
+
+**The entire purpose of this skill is to:**
+1. **Always recall first** to use existing knowledge
+2. **Always retain new learnings** to build future knowledge
+
+This creates a virtuous cycle where Hindsight gets smarter with every conversation.
